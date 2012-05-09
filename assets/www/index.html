@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Chat Demo</title> 
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	<meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1"/>
+	<meta name="viewport" content="target-densitydpi=device-dpi" />
+	<link href="chat.css" rel="stylesheet" type="text/css">
+<script type="text/javascript" src="EventSource.js"></script>
+<script type="text/javascript" src="pushapi.js"></script>
+</head>
+<body> 
+	<h3>Chat .1	<button style='float:right;' onClick='window.location="index.html"'>Reload</button>
+							<button  style='float:right;' onClick='clearLog();'>Clear log</button></h3>
+	<div onClick='toggleDisplay("help","block");'>About this demo (click to show)
+		<div id=help style='display:none;'>Frontend Webapp using the W3C EventSource API to provide a multi-user chat facility. 
+			Backend will include use of the OMA WRAPI Push API to enable chat sessions to seamlessly continue as the 
+			underlying bearers are changed (e.g. switching from connection-oriented EventSource to connectionless delivery 
+			via SMS or WAP Push).<span style='font-size: .5em;'><a rel="license" href="http://creativecommons.org/licenses/by-sa/3.0/">
+			<img alt="Creative Commons License" style="border-width:0" src="http://i.creativecommons.org/l/by-sa/3.0/88x31.png" /></a>
+			<br /><span xmlns:dct="http://purl.org/dc/terms/" href="http://purl.org/dc/dcmitype/InteractiveResource" property="dct:title" 
+			rel="dct:type">Chat Demo</span> by <a xmlns:cc="http://creativecommons.org/ns#" href="http://ddpsdk.net/demos/chat" 
+			property="cc:attributionName" rel="cc:attributionURL">Bryan Sullivan</a> is licensed under a <a rel="license" 
+			href="http://creativecommons.org/licenses/by-sa/3.0/">Creative Commons Attribution-ShareAlike 3.0 Unported License</a>.</span>
+		</div></div>
+	<table>
+		<tr><td>Online chat channel is <span id=ssestate>CLOSED</span>
+				<td><div id=smsstatus style='display:none;'>SMS chat channel is <span id=smsstate>CLOSED</span></div>
+		<tr><td><button onClick='openChat();'>Open chat</button>
+				<td><button onClick='closeChat();'>Close chat</button>
+	</table>
+	<div id=mainopts><form id=options><table>
+		<tr><td>Chat As:																		<td>Accept From:
+		<tr><td><input id=nick type=text value=''/>					<td><input id=from type=text value='any'/>
+	</table></form></div>
+	<div id=offlineopts style='display:none;'>
+		<table>
+			<tr><td colspan=2>Offline Options
+			<tr><td><button id=online onClick='toggleOnline();'>online on</button>
+			<tr><td>SMS Address:																	<td><form id=sms><input id=smsaddress type=text value=''/></form>
+		</table>
+	</div>
+	Message: <button id=sendmsg disabled=true onClick='sendMsg();'>Send Message</button>
+	<form id=send>Send to:<input id=to type=text value='all'/><br/>
+	<form id=input><input id=msg disabled=true type=text value='' style='width:100%;' onkeypress='return noenter();'/></form>
+	<div id=log>Log starts here</div>
+
+<script type="text/javascript">
+	var pushsource = {readyState:2, close:function(){}};
+	var smspushsource = {readyState:2, close: function(){}};
+	var log = document.getElementById("log");
+	var ssestate = document.getElementById("ssestate"); 
+	var smsstate = document.getElementById("smsstate"); 
+	var sendmsg = document.getElementById("sendmsg"); 
+	var msg = document.getElementById("msg"); 
+	var nick = document.forms["options"].nick; 
+	var from = document.forms["options"].from;
+	var smsaddress = document.forms["sms"].smsaddress; 	
+	var to = document.forms["send"].to; 
+	var msg = document.forms["send"].msg;
+	var options = {"online":true};
+	loadOptions();
+	if (navigator.userAgent.indexOf('Android') != -1) {
+		document.getElementById('offlineopts').setAttribute('style','display:block;');
+		document.getElementById('smsstatus').setAttribute('style','display:block;');
+	}
+			
+	function logEvent(ms) {
+		log.innerHTML = ms+'<br/>'+log.innerHTML;
+	}
+	function clearLog() {
+		log.innerHTML = "";
+	}
+
+	function noenter() {
+	  if (window.event && window.event.keyCode == 13) sendMsg();
+	  return !(window.event && window.event.keyCode == 13); // block form submission
+	}
+
+	function loadOptions() {
+		try {
+			var defnick = navigator.platform + sumStr(dumpProps(navigator,'navigator') + dumpProps(window,'window') + dumpProps(screen,'screen'));
+			smsaddress.value = (localStorage.getItem('chat:smsaddress')==null) ? '' : localStorage.getItem('chat:smsaddress');
+			nick.value = (localStorage.getItem('chat:nick')==null) ? defnick : localStorage.getItem('chat:nick');
+			from.value = (localStorage.getItem('chat:from')==null) ? 'all' : localStorage.getItem('chat:from');
+			to.value = (localStorage.getItem('chat:to')==null) ? 'all' : localStorage.getItem('chat:to');
+		}
+		catch (e) { alert(e); }
+	}
+
+	function saveOptions() {
+		localStorage.setItem('chat:smsaddress',smsaddress.value);
+		localStorage.setItem('chat:nick',nick.value);
+		localStorage.setItem('chat:from',from.value);
+		localStorage.setItem('chat:to',to.value);		
+	}
+
+	var sendResponse = function(xhr) {
+		if (xhr.status==200) {
+			var rsp = JSON.parse(xhr.responseText);
+			if (!rsp.success) logEvent('Message send request failed');
+		}
+		else logEvent('Message send request failed, HTTP status = '+xhr.status);
+	}
+
+	function sendMsg() {
+		saveOptions();
+		url = 'chat.php?action=send&nick='+nick.value;
+		asyncXHR("POST",url,sendResponse,false,false,'{"to":"'+to.value+'","msg":"'+msg.value+'"}');
+	}
+	
+	var closeResponse = function(xhr) {
+		if (xhr.status==200) {
+			var rsp = JSON.parse(xhr.responseText);
+			if (!rsp.success) logEvent('Chat session close request failed');
+			else logEvent('Chat session close request succeeded: '+xhr.responseText);
+		}
+		else logEvent('Chat session close request failed, HTTP status = '+xhr.status);
+	}
+
+	function closeChat() {
+		asyncXHR("GET",'chat.php?action=close&nick='+nick.value,closeResponse,false,false,false);
+		if (pushsource.readyState != 2) pushsource.close();
+		if (smspushsource.readyState != 2) smspushsource.close();
+		sseClosed();
+		smsClosed();
+	}
+
+	function sseClosed() {
+		ssestate.innerHTML = "CLOSED";
+		if (smspushsource.readyState==2) {
+			msg.disabled = true;
+			sendmsg.disabled = true;
+		}
+	}
+	function smsClosed() {
+		smsstate.innerHTML = "CLOSED";
+		if (pushsource.readyState==2) {
+			msg.disabled = true;
+			sendmsg.disabled = true;
+		}
+	}
+	
+	function openEventSource() {
+		try {
+			pushsource = new PushSource('eventsource.php?action=open&nick='+nick.value+'&push-accept-source='+from.value);
+			pushsource.lastEventId = 0;
+			pushsource.onmessage = function(event) {
+				pushsource.lastEventId++;
+				logEvent(event.data);
+			};
+			pushsource.onopen = function() {
+				if (pushsource.readyState==1) {
+					ssestate.innerHTML = 'OPEN';
+					msg.disabled = false;
+					sendmsg.disabled = false;
+				}
+			};			
+			pushsource.onclose = function() {
+				logEvent("EventSource closed by server");
+				sseClosed();
+			};
+			pushsource.onerror = function() {
+				logEvent("EventSource error");
+				pushsource.close();
+				sseClosed();
+			};
+		}
+		catch (ees) {
+			logEvent('EventSource open error: '+e);
+		}
+	}
+	
+	function openSMSEventSource() {
+		try {
+			smspushsource = new PushSource('http://localhost:4035?push-accept-source=sms:80712615');
+			// Message entry and sending should be enabled when the open event is received.
+			// But the open event is not being delivered for some reason. So this kludge in the meantime.
+			msg.disabled = false;
+			sendmsg.disabled = false;
+			smsstate.innerHTML = 'OPEN';
+			smspushsource.lastEventId = 0;
+			smspushsource.onmessage = function(event) {
+				smspushsource.lastEventId++;
+				logEvent(event.data);
+			};
+			smspushsource.onopen = function() {
+				if (smspushsource.readyState==1) {
+					smsstate.innerHTML = 'OPEN';
+					msg.disabled = false;
+					sendmsg.disabled = false;
+				}
+			};			
+			smspushsource.onclose = function() {
+				logEvent("SMS EventSource closed by server");
+				smsClosed();
+			};
+			smspushsource.onerror = function() {
+				logEvent("SMS EventSource error");
+				smspushsource.close();
+				smsClosed();
+			};
+		}
+		catch (esms) {
+			logEvent('SMS EventSource open error: '+e);
+		}
+	}
+	
+	var openResponse = function(xhr) {
+		if (xhr.status==200) {
+			var rsp = JSON.parse(xhr.responseText);
+			if (!rsp.success) logEvent('Chat session open request failed');
+			else {
+				logEvent('Chat session open request succeeded: '+xhr.responseText);
+				if (options['online']) openEventSource();
+				else openSMSEventSource();
+			}
+		}
+		else logEvent('Chat session open request failed, HTTP status = '+xhr.status);
+	}
+	
+	function openChat() {
+		var params;
+		saveOptions();
+		if (smsaddress.value == '' && !options['online']) {
+			alert('Please provide an SMS address or select "online on". Chat events cannot be delivered until one or both of these are selected.');
+		}
+		else {
+			try {
+				params = '?action=open&nick='+nick.value+'&push-accept-source='+from.value
+				+'&online='+options['online'];
+				if (smsaddress.value != '') params += '&smsaddress='+smsaddress.value;
+				asyncXHR("GET","chat.php"+params,openResponse,false,false,false); // notify server of chat open
+			}
+			catch (e) {
+				alert(e.message);
+			}
+		}
+	}
+	
+	var updateResponse = function(xhr) {
+		if (xhr.status==200) {
+			var rsp = JSON.parse(xhr.responseText);
+			if (!rsp.success) logEvent('Chat status update request failed');
+			else logEvent('Chat status update successful');
+		}
+		else logEvent('Chat  status update request failed, HTTP status = '+xhr.status);
+	}	
+	
+	function toggleOnline() {
+		toggleOption('online');
+		if (options['online'] && pushsource.readyState == 2) openEventSource();
+		if (!options['online'] && pushsource.readyState != 2) {
+			pushsource.close();
+			sseClosed();
+		}
+		params = '?action=update&nick='+nick.value+'&push-accept-source='+from.value
+			+'&online='+options['online'];
+		if (smsaddress.value != '') params += '&smsaddress='+smsaddress.value;
+		asyncXHR("GET","chat.php"+params,updateResponse,false,false,false); // notify server of chat status update
+	}
+	
+	// Miscellaneous support functions
+	
+	function asyncXHR(method,url,callback,accept,contentType,body) {
+		var xhr = false;
+		try { xhr = new XMLHttpRequest(); }
+		catch(e1) { logEvent("asyncXHR: xhr create error "+e1+" for URL "+url); }
+		if(xhr) {
+			try {
+				xhr.onreadystatechange = function() {
+					if (xhr.readyState === 4) callback(xhr);
+				};
+				if (accept) xhr.setRequestHeader("Accept",accept);
+				if (contentType) xhr.setRequestHeader("Content-Type",contentType);
+				xhr.open(method, url, true);
+				if (body) xhr.send(body);
+				else xhr.send();
+//				logEvent("asyncXHR: "+method+" sent for URL "+url);
+			}
+			catch(e4) { logEvent("asyncXHR: xhr send error "+e4+" for URL "+url); }
+		}
+		else { logEvent("asyncXHR: xhr create error for URL "+url); }
+	}
+	    
+	function toggleDisplay(id,type) {
+		el = document.getElementById(id);
+		el.style.display = (el.style.display == type) ? "none" : type;
+	}	
+	
+	function toggleOption(id) {
+		var el = document.getElementById(id); 
+		var h = el.innerHTML;
+		var v = (h.substr(id.length+1) == 'on') ? 'off' : 'on';
+		el.innerHTML = id + " " + v;
+		options[id] = !options[id];
+	}
+	
+	function dumpProps(obj, parent) {	
+		var str = '';	
+		try {	
+			for (var i in obj) { 
+				if (typeof obj[i] != 'object' && typeof obj[i] != 'function' ) {
+					if (parent) str += parent + '.' + i + ' = ' + obj[i] + '<br/>';
+					else str += i + ' = ' + obj[i] + '<br/>';
+				}
+			}
+			return(str);
+		} 
+		catch (e) {}
+	}
+	
+	function sumStr(s) { 
+		var n = 0;
+		for (i=0;i<s.length;i++) n += s.charCodeAt(i); 
+		return(n);
+	}
+	
+</script> 
+</body>
+</html>

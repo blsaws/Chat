@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Chat Demo Control Panel</title> 
+	<link rel="icon" type="image/png" href="/favicon.ico">
+	<meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1"/>
+	<meta name="viewport" content="target-densitydpi=device-dpi" />
+	<link href="control.css" rel="stylesheet" type="text/css">
+</head>
+<body> 
+	<h3>Chat Control Panel</h3>
+	<table>
+		<tr>
+			<td><button onClick='openControlES();'>Open control EventSource</button></td>
+			<td><button onClick='closeControlES();'>Close control EventSource</button></td>
+			<td><button onClick='clearLog();'>Clear log</button></td>
+		</tr>
+		<tr>
+			<td><button id=inservice onClick='toggleOption("inservice");'>inservice off</button></td>
+			<td><button id=sms onClick='toggleOption("sms");'>sms off</button></td>
+			<td></td>
+		</tr>
+		<tr>
+			<td><button onClick='getStatus();'>Check status</button></td>
+			<td><button onClick='clearStatus();'>Clear status</button></td>
+			<td></td>
+		</tr>
+	</table>
+	<form id=input>	
+		Control key:<input id=key type=text value='' onchange="getConfig();"/><br/>
+		Debug level:<input id=debug type=text value='0' onchange="sendConfig();"/><br/>
+	</form>
+	<div id=log>Log starts here</div>
+
+<script type="text/javascript">
+	var log = document.getElementById("log");
+	var inservice = document.getElementById("inservice"); 
+	var sms = document.getElementById("sms"); 
+	var key = document.forms["input"].key; 
+	var debug = document.forms["input"].debug; 
+	var es = null;
+	var config = { "inservice":false, "sms":false, "debug":0 };
+	
+	function getConfig() {
+		asyncXHR("GET",'config.json',function (xhr) {
+			config = JSON.parse(xhr.responseText);
+			if (config.inservice) inservice.innerHTML = "inservice on";
+			if (config.sms) sms.innerHTML = "sms on";
+			debug.value = config.debug;
+		},false,false,false);	
+	}
+	
+	function clearStatus() {
+		asyncXHR("GET",'control.php?action=clearstatus&key='+key.value,function (xhr) {
+			logEvent(xhr.status+' '+xhr.statusText+' '+xhr.responseText);
+		},false,false,false);	
+	}
+	
+	function getStatus() {
+		asyncXHR("GET",'control.php?action=status&key='+key.value,function (xhr) {
+			logEvent(xhr.status+' '+xhr.statusText+' '+xhr.responseText);
+		},false,false,false);	
+	}
+		
+	function openControlES() {
+		es = new EventSource("log.php?key="+key.value);
+		es.lastEventId = 0;
+		es.onmessage = function(event) {
+			es.lastEventId++;
+			logEvent(event.data);
+		};
+		es.onopen = function() { logEvent("Control EventSource is open"); };
+		es.onclose = function() { logEvent("Control EventSource closed by server"); };
+		es.onerror = function() { logEvent("Control EventSource error"); };
+	}
+	
+	function closeControlES() {
+		if (es!=null) es.close();
+		logEvent("Control EventSource closed");
+	}
+	
+	var xhrResponse = function (xhr) {
+		logEvent('Server response: status='+xhr.status+' responseText='+xhr.responseText);
+	}
+	
+	function sendConfig() {
+		asyncXHR("GET",'control.php?action=config&key='+key.value+'&inservice='+config.inservice+'&sms='+config.sms+'&debug='+debug.value,xhrResponse,false,false,false);		
+	}
+
+	function toggleOption(id) {
+		var el = document.getElementById(id); 
+		config[id] = !config[id];
+		el.innerHTML = id + ((config[id]) ? ' on' : ' off');
+		sendConfig();
+	}
+
+	function logEvent(ms) {
+		log.innerHTML = ms+'<br/>'+log.innerHTML;
+	}
+
+	function clearLog() {
+		log.innerHTML = '';
+		asyncXHR("GET",'control.php?action=clearlog&key='+key.value,xhrResponse,false,false,false);
+	}
+
+	function noenter() {
+	  if (window.event && window.event.keyCode == 13) getConfig();
+	  return !(window.event && window.event.keyCode == 13); // block form submission
+	}
+
+	// Miscellaneous support functions
+	
+	function asyncXHR(method,url,callback,accept,contentType,body) {
+		var xhr = false;
+		try { xhr = new XMLHttpRequest(); }
+		catch(e1) {}
+		if(xhr) {
+			try {
+				xhr.onreadystatechange = function() {
+					if (xhr.readyState === 4) callback(xhr);
+				};
+				if (accept) xhr.setRequestHeader("Accept",accept);
+				if (contentType) xhr.setRequestHeader("Content-Type",contentType);
+				xhr.open(method, url, true);
+				if (body) xhr.send(body);
+				else xhr.send();
+			}
+			catch(e4) { logEvent("asyncXHR: xhr send error "+e4.message+" for URL "+url); }
+		}
+	}
+	    
+</script> 
+</body>
+</html>

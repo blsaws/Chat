@@ -1,0 +1,25 @@
+AddType application/x-chrome-extension .crx
+AddType application/x-web-app-manifest+json .webapp
+AddType text/cache-manifest .manifest
+AddType application/x-opera-widgets .owgt
+AddType application/widget .wgt
+AddType application/octet-string .CAB
+AddType application/octet-string .cab
+AddType application/octet-string .conf
+AddType application/rss+xml .rss
+AddType application/rss+atom .atom
+AddType application/dcd+xml .dcd
+AddType application/xml .xsd
+
+SetEnv no-gzip dont-vary
+SetEnv gzip-only-text/html
+SetEnv KeepAliveTimeout 300
+SetEnv TimeOut 300
+
+Header set Cache-Control no-cache
+	
+<IfModule mod_php5.c>
+	php_flag output_buffering False
+	php_flag zlib.output_compression False
+	php_flag implicit_flush True
+</IfModule>

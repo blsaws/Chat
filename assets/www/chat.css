@@ -1,0 +1,9 @@
+body { font-family: sans-serif; }
+@media screen and (min-width: 200px) { body { font-size:100%; } }
+@media screen and (min-width: 400px) { body { font-size:150%; } }
+@media screen and (min-width: 600px) { body { font-size:200%; } }		
+@media handheld and (min-width: 200px) { body { font-size:100%; } }
+@media handheld and (min-width: 400px) { body { font-size:150%; } }
+@media handheld and (min-width: 600px) { body { font-size:200%; } }		
+input { font-size:inherit; } 
+button { font-size:inherit; } 
